@@ -18,7 +18,11 @@
 #endif
 #include <stdio.h>
 #include <assert.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
 #include <time.h>
 #include <avahi-client/client.h>
 #include <avahi-client/lookup.h>
@@ -68,6 +72,47 @@ static void resolve_callback(
                     !!(flags & AVAHI_LOOKUP_RESULT_WIDE_AREA),
                     !!(flags & AVAHI_LOOKUP_RESULT_MULTICAST),
                     !!(flags & AVAHI_LOOKUP_RESULT_CACHED));
+
+
+            if (address->proto == AVAHI_PROTO_INET)
+            {
+                const char *prefix = "rtsp://";
+
+                const char* path_template = "path=";
+                char* path = strstr(t, path_template) + strlen(path_template);
+                for (char* c = path; *c != '\0'; ++c)
+                    if (*c == '\"')
+                        *c = '\0';
+
+                char* url = (char*)malloc(strlen(prefix) + strlen(a) + 1 + 10 + 1 + strlen(path));
+                sprintf(url, "%s%s:%u/%s", prefix, a, port, path);
+                printf("playing %s\n", url);
+
+                // play rtsp stream
+                pid_t pid = fork();
+                if (pid == -1)
+                    printf("fork error: %s\n", strerror(errno));
+                else if (pid <= 0)
+                {
+                    // child
+                    int rc = execlp("/usr/bin/mplayer", "mplayer", url, NULL);
+                    if (rc == -1)
+                        exit(1);
+                    exit(0);
+                }
+                else
+                {
+                    // we are the parent, wait for the child
+                    //int status;
+                    //waitpid(pid, &status, 0);
+
+                    //return status;
+                }
+
+                free(url);
+            }
+
+
             avahi_free(t);
         }
     }
@@ -135,7 +180,7 @@ int main(AVAHI_GCC_UNUSED int argc, AVAHI_GCC_UNUSED char*argv[]) {
         goto fail;
     }
     /* Create the service browser */
-    if (!(sb = avahi_service_browser_new(client, AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, "_http._tcp", NULL, (AvahiLookupFlags)0, browse_callback, client))) {
+    if (!(sb = avahi_service_browser_new(client, AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, "_rtsp._tcp", NULL, (AvahiLookupFlags)0, browse_callback, client))) {
         fprintf(stderr, "Failed to create service browser: %s\n", avahi_strerror(avahi_client_errno(client)));
         goto fail;
     }
